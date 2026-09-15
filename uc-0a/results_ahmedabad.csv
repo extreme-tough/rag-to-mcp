@@ -1,0 +1,16 @@
+complaint_id,category,priority,reason,flag
+AM-202401,Other,Standard,"The description is too vague to classify confidently because it does not mention approved category terms such as 'pothole', 'flood', 'streetlight', or 'waste'.",NEEDS_REVIEW
+AM-202402,Heat Hazard,Standard,"The description mentions 'temperature' and related terms, which matches Heat Hazard.",
+AM-202405,Other,Standard,"The description is too vague to classify confidently because it does not mention approved category terms such as 'pothole', 'flood', 'streetlight', or 'waste'.",NEEDS_REVIEW
+AM-202406,Heat Hazard,Standard,"The description mentions 'heatwave' and related terms, which matches Heat Hazard.",
+AM-202407,Road Damage,Urgent,"The description mentions 'upturned' and related terms, which matches Road Damage.",
+AM-202410,Pothole,Standard,"The description mentions 'pothole' and related terms, which matches Pothole.",
+AM-202414,Other,Standard,"The description is too vague to classify confidently because it does not mention approved category terms such as 'pothole', 'flood', 'streetlight', or 'waste'.",NEEDS_REVIEW
+AM-202417,Waste,Standard,"The description mentions 'waste' and related terms, which matches Waste.",
+AM-202421,Noise,Standard,"The description mentions 'music' and related terms, which matches Noise.",
+AM-202424,Road Damage,Standard,"The description mentions 'road' and related terms, which matches Road Damage.",
+AM-202429,Heat Hazard,Standard,"The description mentions 'temperature' and related terms, which matches Heat Hazard.",
+AM-202431,Heritage Damage,Standard,"The description mentions 'heritage' and related terms, which matches Heritage Damage.",
+AM-202435,Heat Hazard,Standard,"The description mentions 'heat' and related terms, which matches Heat Hazard.",
+AM-202444,Waste,Standard,"The description mentions 'waste' and related terms, which matches Waste.",
+AM-202445,Heat Hazard,Standard,"The description mentions 'sun' and related terms, which matches Heat Hazard.",
