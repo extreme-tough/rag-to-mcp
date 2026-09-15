@@ -1,25 +1,42 @@
-# skills.md — UC-RAG RAG Server
-# INSTRUCTIONS:
-# 1. Open your AI tool
-# 2. Paste the full contents of uc-rag/README.md
-# 3. Use this prompt:
-#    "Read this UC README. Generate a skills.md YAML defining the two
-#     skills: chunk_documents and retrieve_and_answer. Each skill needs:
-#     name, description, input, output, error_handling.
-#     error_handling must address the failure modes in the README.
-#     Output only valid YAML."
-# 4. Paste the output below, replacing this placeholder
-# 5. Verify error_handling addresses all three failure modes
-
 skills:
   - name: chunk_documents
-    description: "[FILL IN]"
-    input: "[FILL IN: path to policy-documents directory]"
-    output: "[FILL IN: list of chunk dicts with doc_name, chunk_index, text]"
-    error_handling: "[FILL IN: what happens if a file is missing or unreadable]"
+    description: >
+      Load policy documents from the policy-documents directory, split them into
+      sentence-aware chunks no larger than 400 tokens, and return each chunk with
+      metadata for document name, chunk index, and text.
+    input: >
+      Path to the policy-documents directory containing the HR, IT, and Finance
+      policy text files.
+    output: >
+      A list of chunk dictionaries, each containing doc_name, chunk_index, and
+      text, with chunk boundaries preserved at sentence ends.
+    error_handling: >
+      If a policy file is missing, unreadable, or cannot be parsed, skip that file,
+      log the issue, and continue processing the remaining documents. This prevents
+      chunk boundary failures and ensures the pipeline does not silently split a
+      clause across sentence boundaries or drop valid policy content, including the
+      HR leave-without-pay approval sentence in section 5.2.
 
   - name: retrieve_and_answer
-    description: "[FILL IN]"
-    input: "[FILL IN: query string]"
-    output: "[FILL IN: answer string + list of cited chunks]"
-    error_handling: "[FILL IN: what happens when no chunk scores above 0.6]"
+    description: >
+      Embed the user query with sentence-transformers, retrieve the top three
+      relevant chunks from ChromaDB, filter out low-scoring matches below 0.6,
+      answer using retrieved context only, and return the answer with cited chunk
+      sources.
+    input: >
+      A query string representing a city staff question about HR, IT, or Finance
+      policy.
+    output: >
+      An answer string plus a list of cited chunk references, each including the
+      source document name and chunk index.
+    error_handling: >
+      If no retrieved chunk scores above 0.6, return the refusal template exactly:
+      'This question is not covered in the retrieved policy documents. Retrieved
+      chunks: [list chunk sources]. Please contact the relevant department for
+      guidance.' Never generate an answer from general knowledge. If the query
+      spans multiple documents, retrieve from each separately and do not merge
+      chunks from different documents into a single answer. Never add information
+      not present in the retrieved chunks; this prevents wrong retrieval and answer
+      grounding failures. For the leave-without-pay question, the retrieved context
+      must include the HR policy sentence naming both Department Head and HR
+      Director as required approvers.
