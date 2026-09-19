@@ -28,10 +28,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../uc-rag"))
 try:
     # Try participant's rag_server first
     from rag_server import query as rag_query
+    from rag_server import warmup as rag_warmup
     print("[mcp_server] Using participant rag_server.py")
 except (ImportError, NotImplementedError):
     # Fall back to stub
     from stub_rag import query as rag_query
+    rag_warmup = None
     print("[mcp_server] Using stub_rag.py (fallback)")
 
 # Import LLM adapter
@@ -44,13 +46,11 @@ from llm_adapter import call_llm
 TOOL_DEFINITION = {
     "name": "query_policy_documents",
     "description": (
-        # FILL IN: Describe exactly what this tool covers and what it does not.
-        # Bad:  "Answers questions about policies"
-        # Good: "Answers questions about CMC HR Leave Policy, IT Acceptable Use
-        #        Policy, and Finance Reimbursement Policy only. Returns cited
-        #        answers grounded in retrieved document chunks. Returns a refusal
-        #        for questions outside these three documents."
-        "[FILL IN: specific scope + what it refuses]"
+        "Answers questions about CMC HR Leave Policy, IT Acceptable Use Policy, "
+        "and Finance Reimbursement Policy ONLY. Returns cited answers grounded in "
+        "retrieved document chunks. Returns a refusal for questions outside these "
+        "three documents. Do not send budget, procurement, or general policy "
+        "questions to this tool."
     ),
     "inputSchema": {
         "type": "object",
@@ -75,11 +75,25 @@ def query_policy_documents(question: str) -> dict:
     - If RAG refuses (no chunks above threshold) → isError: True
     - If RAG raises exception → isError: True with error message
     """
-    raise NotImplementedError(
-        "Implement query_policy_documents using your AI tool.\n"
-        "Hint: call rag_query(question, llm_call=call_llm), "
-        "check result['refused'], format as MCP content response."
-    )
+    if not isinstance(question, str) or not question.strip():
+        return {
+            "content": [{"type": "text", "text": "Question must be a non-empty string."}],
+            "isError": True,
+        }
+
+    try:
+        result = rag_query(question, llm_call=call_llm)
+    except Exception as exc:
+        return {
+            "content": [{"type": "text", "text": f"Error: {exc}"}],
+            "isError": True,
+        }
+
+    answer = result.get("answer", "") or "No answer available."
+    return {
+        "content": [{"type": "text", "text": answer}],
+        "isError": bool(result.get("refused", False)),
+    }
 
 
 # ── SKILL: serve_mcp ─────────────────────────────────────────────────────────
@@ -95,12 +109,85 @@ class MCPHandler(BaseHTTPRequestHandler):
     """
 
     def do_POST(self):
-        raise NotImplementedError(
-            "Implement do_POST using your AI tool.\n"
-            "Hint: read Content-Length, parse JSON body, "
-            "dispatch on method, write JSON-RPC response.\n"
-            "Return HTTP 200 for all JSON-RPC responses including errors."
-        )
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length) if length > 0 else b"{}"
+            body = raw.decode("utf-8", errors="replace")
+            try:
+                request = json.loads(body)
+            except json.JSONDecodeError:
+                response = {
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "error": {"code": -32700, "message": "Parse error"},
+                }
+                self._send_json(response)
+                return
+
+            request_id = request.get("id")
+            method = request.get("method")
+
+            if method == "tools/list":
+                response = {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": {"tools": [TOOL_DEFINITION]},
+                }
+                self._send_json(response)
+                return
+
+            if method == "tools/call":
+                params = request.get("params", {})
+                if not isinstance(params, dict):
+                    response = {
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "error": {"code": -32602, "message": "Invalid params"},
+                    }
+                    self._send_json(response)
+                    return
+
+                tool_name = params.get("name")
+                arguments = params.get("arguments", {})
+                if tool_name != "query_policy_documents" or not isinstance(arguments, dict):
+                    response = {
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "error": {"code": -32602, "message": "Invalid tool name or arguments"},
+                    }
+                    self._send_json(response)
+                    return
+
+                result = query_policy_documents(arguments.get("question", ""))
+                response = {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": result,
+                }
+                self._send_json(response)
+                return
+
+            response = {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "error": {"code": -32601, "message": "Method not found"},
+            }
+            self._send_json(response)
+        except Exception as exc:  # pragma: no cover - defensive fallback
+            response = {
+                "jsonrpc": "2.0",
+                "id": None,
+                "error": {"code": -32603, "message": f"Internal error: {exc}"},
+            }
+            self._send_json(response)
+
+    def _send_json(self, payload):
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def log_message(self, format, *args):
         # Suppress default HTTP logging — use print for clarity
@@ -120,6 +207,14 @@ def main():
         print("[mcp_server] WARNING: RAG index not found.")
         print("[mcp_server] Run first: python3 ../uc-rag/stub_rag.py --build-index")
         print("[mcp_server] Starting anyway — queries will fail until index is built.")
+
+    # Warm up RAG (loads embedder + collection once) so requests stay fast
+    if rag_warmup is not None:
+        try:
+            print("[mcp_server] Warming up RAG (loads embedder once)...")
+            rag_warmup()
+        except Exception as exc:
+            print(f"[mcp_server] WARNING: RAG warmup failed ({exc}). Queries may fail.")
 
     server = HTTPServer(("localhost", args.port), MCPHandler)
     print(f"[mcp_server] MCP server running on http://localhost:{args.port}")

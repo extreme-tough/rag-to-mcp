@@ -40,13 +40,21 @@ def call_llm(prompt: str) -> str:
             "Prompt that would have been sent:\n" + prompt[:500] + "..."
         )
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content(prompt)
-        return response.text
+        from google import genai
+
+        client = genai.Client(api_key=api_key)
+        model_name = "gemini-3.6-flash"
+
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+            )
+            return response.text
+        except Exception as e:
+            return f"[LLM ERROR] {str(e)}"
     except ImportError:
-        return "[ERROR] google-generativeai not installed. Run: pip3 install google-generativeai"
+        return "[ERROR] google-genai not installed. Run: pip3 install google-genai"
     except Exception as e:
         return f"[LLM ERROR] {str(e)}"
 
