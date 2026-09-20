@@ -20,6 +20,35 @@ import os
 import re
 import sys
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CHROMA_DB_PATH = os.path.join(BASE_DIR, "chroma_db")
+
+# --- CACHED EMBEDDER / COLLECTION (loaded once) ---
+_embedder = None
+_client = None
+_collection = None
+
+def get_embedder():
+    global _embedder
+    if _embedder is None:
+        print("Loading embedder (first run only)...")
+        from sentence_transformers import SentenceTransformer
+        _embedder = SentenceTransformer("all-MiniLM-L6-v2")
+    return _embedder
+
+def get_collection():
+    global _client, _collection
+    if _collection is None:
+        print(f"Loading collection from: {CHROMA_DB_PATH}")
+        import chromadb
+        _client = chromadb.PersistentClient(path=CHROMA_DB_PATH)
+        _collection = _client.get_collection(name="policy_docs")
+    return _collection
+
+def warmup():
+    get_embedder()
+    get_collection()
+
 # --- SKILL: chunk_documents ---
 def chunk_documents(docs_dir: str, max_tokens: int = 400) -> list[dict]:
     """
@@ -213,8 +242,20 @@ def retrieve_and_answer(
     }
 
 
+# --- PUBLIC QUERY INTERFACE (called by UC-MCP) ---
+def query(question: str, llm_call=None) -> dict:
+    """
+    Public interface for UC-MCP to call.
+    Uses the cached embedder and collection, then retrieves and answers.
+    Returns {answer, cited_chunks, refused}
+    """
+    collection = get_collection()
+    embedder = get_embedder()
+    return retrieve_and_answer(question, collection, embedder, llm_call)
+
+
 # --- INDEX BUILDER ---
-def build_index(docs_dir: str, db_path: str = "./chroma_db"):
+def build_index(docs_dir: str, db_path: str = CHROMA_DB_PATH):
     """
     Chunk all documents and store embeddings in ChromaDB.
     Called once before querying.
@@ -294,7 +335,7 @@ def main():
                         default="../data/policy-documents",
                         help="Path to policy documents directory")
     parser.add_argument("--db-path", type=str,
-                        default="./chroma_db",
+                        default=CHROMA_DB_PATH,
                         help="Path to ChromaDB storage directory")
     args = parser.parse_args()
 
